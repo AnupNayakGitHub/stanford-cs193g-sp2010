@@ -61,6 +61,18 @@ __global__ void dev_graph_propagate(unsigned int *d_graph_indices,
                                     float *graph_nodes_out,
                                     float * inv_edges_per_node, int array_length)
 {
+  unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+  //Ignore the cases beyond boundary
+  if (index >= array_length) return;
+  
+  //printf("Anup %d \n", threadIdx.x, blockIdx.x);
+  float sum {0.f};
+  for(int j = graph_indices[i]; j < graph_indices[i+1]; j++)
+  {
+    sum += graph_nodes_in[graph_edges[j]]*inv_edges_per_node[graph_edges[j]];
+  }
+  graph_nodes_out[i] = 0.5f/(float)array_length + 0.5f*sum;
+
 }
 
 
@@ -92,10 +104,15 @@ void device_graph_iterate(unsigned int *h_graph_indices,
 
   start_timer(&timer);
   // TODO your device code should go here, so you can measure how long it takes
+  dim3 THRD_SZ(512);
+  dim3 GRID_SZ((num_elements+THRD_SZ.x-1)/THRD_SZ.x);
+
   assert((nr_iterations % 2) == 0);
   for(int iter = 0; iter < nr_iterations; iter+=2)
   {
-    dev_graph_propagate<<<16, 16>>>(d_graph_indices, d_graph_edges, d_graph_nodes_input, d_graph_nodes_result, d_inv_edges_per_node, num_elements);
+    dev_graph_propagate<<<GRID_SZ, THRD_SZ>>>(d_graph_indices, d_graph_edges,
+                                              d_graph_nodes_input, d_graph_nodes_result,
+                                              d_inv_edges_per_node, num_elements);
     //dev_graph_propagate(graph_indices, graph_edges, graph_nodes_B, graph_nodes_A, inv_edges_per_node, array_length);
   }
   
@@ -110,6 +127,7 @@ int main(void)
 {
   // create arrays of 2M elements
   int num_elements = 1 << 21;
+  num_elements -= 5;
   int avg_edges = 8;
   int iterations = 20;
   
