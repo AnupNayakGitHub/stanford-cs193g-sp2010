@@ -18,7 +18,7 @@
 # You can set your PATH and LD_LIBRARY_PATH variables as part of your
 # .profile so that you can compile and run without using this makefile.
 
-NVCCFLAGS	:=
+NVCCFLAGS	:= "-std=c++11"
 NVCC		:= /usr/local/cuda/bin/nvcc
 LD_LIBRARY_PATH	:= /usr/local/cuda/lib64
 
