@@ -116,14 +116,19 @@ void device_graph_iterate(unsigned int *h_graph_indices,
     dev_graph_propagate<<<GRID_SZ, THRD_SZ>>>(d_graph_indices, d_graph_edges,
                                               d_graph_nodes_result, d_graph_nodes_input,
                                               d_inv_edges_per_node, num_elements);
-    //dev_graph_propagate(graph_indices, graph_edges, graph_nodes_B, graph_nodes_A, inv_edges_per_node, array_length);
   }
-  cudaMemcpy(h_graph_nodes_result, d_graph_nodes_result, num_elements * sizeof(float),cudaMemcpyDeviceToHost);
   
   check_launch("gpu graph propagate");
   stop_timer(&timer,"gpu graph propagate");
 
   // TODO your final result should end up in h_graph_nodes_result, which is a *host* pointer
+  cudaMemcpy(h_graph_nodes_result, d_graph_nodes_result, num_elements * sizeof(float),cudaMemcpyDeviceToHost);
+
+  cudaFree(d_graph_indices);
+  cudaFree(d_graph_edges);
+  cudaFree(d_graph_nodes_input);
+  cudaFree(d_graph_nodes_result);
+  cudaFree(d_inv_edges_per_node);
 }
 
 
