@@ -57,9 +57,9 @@ void host_graph_iterate(unsigned int *graph_indices, unsigned int *graph_edges, 
 // TODO your kernel code here
 __global__ void dev_graph_propagate(unsigned int *d_graph_indices, 
                                     unsigned int *d_graph_edges,
-                                    float *graph_nodes_in,
-                                    float *graph_nodes_out,
-                                    float * inv_edges_per_node, int array_length)
+                                    float *d_graph_nodes_in,
+                                    float *d_graph_nodes_out,
+                                    float *d_inv_edges_per_node, int array_length)
 {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
   //Ignore the cases beyond boundary
@@ -67,11 +67,11 @@ __global__ void dev_graph_propagate(unsigned int *d_graph_indices,
   
   //printf("Anup %d \n", threadIdx.x, blockIdx.x);
   float sum {0.f};
-  for(int j = graph_indices[i]; j < graph_indices[i+1]; j++)
+  for(int j = d_graph_indices[index]; j < d_graph_indices[index+1]; j++)
   {
-    sum += graph_nodes_in[graph_edges[j]]*inv_edges_per_node[graph_edges[j]];
+    sum += d_graph_nodes_in[d_graph_edges[j]]*d_inv_edges_per_node[d_graph_edges[j]];
   }
-  graph_nodes_out[i] = 0.5f/(float)array_length + 0.5f*sum;
+  d_graph_nodes_out[index] = 0.5f/(float)array_length + 0.5f*sum;
 
 }
 
@@ -113,13 +113,22 @@ void device_graph_iterate(unsigned int *h_graph_indices,
     dev_graph_propagate<<<GRID_SZ, THRD_SZ>>>(d_graph_indices, d_graph_edges,
                                               d_graph_nodes_input, d_graph_nodes_result,
                                               d_inv_edges_per_node, num_elements);
-    //dev_graph_propagate(graph_indices, graph_edges, graph_nodes_B, graph_nodes_A, inv_edges_per_node, array_length);
+    dev_graph_propagate<<<GRID_SZ, THRD_SZ>>>(d_graph_indices, d_graph_edges,
+                                              d_graph_nodes_result, d_graph_nodes_input,
+                                              d_inv_edges_per_node, num_elements);
   }
   
   check_launch("gpu graph propagate");
   stop_timer(&timer,"gpu graph propagate");
 
   // TODO your final result should end up in h_graph_nodes_result, which is a *host* pointer
+  cudaMemcpy(h_graph_nodes_result, d_graph_nodes_result, num_elements * sizeof(float),cudaMemcpyDeviceToHost);
+
+  cudaFree(d_graph_indices);
+  cudaFree(d_graph_edges);
+  cudaFree(d_graph_nodes_input);
+  cudaFree(d_graph_nodes_result);
+  cudaFree(d_inv_edges_per_node);
 }
 
 
