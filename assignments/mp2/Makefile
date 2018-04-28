@@ -26,13 +26,13 @@ LD_LIBRARY_PATH	:= /usr/local/cuda/lib64
 all: part1 part2 part3
 
 part1: mp2-part1.cu mp2-util.h
-	$(NVCC) -arch=sm_11 -o part1 mp2-part1.cu $(NVCCFLAGS)
+	$(NVCC) -arch=sm_30 -o part1 mp2-part1.cu $(NVCCFLAGS)
 
 part2: mp2-part2.cu mp2-util.h
 	$(NVCC) -o part2 mp2-part2.cu $(NVCCFLAGS)
 	
 part3: mp2-part3.cu mp2-part3-reference.cu mp2-util.h mp2.h
-	$(NVCC) -arch=sm_11 -o part3 mp2-part3.cu mp2-part3-reference.cu $(NVCCFLAGS)
+	$(NVCC) -arch=sm_30 -o part3 mp2-part3.cu mp2-part3-reference.cu $(NVCCFLAGS)
 	
 clean:
 	rm -rf part1 part2 part3

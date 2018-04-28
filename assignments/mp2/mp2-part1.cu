@@ -39,11 +39,12 @@
 #include <ctime>
 
 #include <cuda.h>
+#include <assert.h>
 
 #include "mp2-util.h"
 
 // TODO enable this to print debugging information
-//const bool print_debug = true;
+// const bool print_debug = true;
 const bool print_debug = false;
 
 event_pair timer;
@@ -55,7 +56,7 @@ event_pair timer;
 // Overall there cannot be more than 4B bins, so we can just concatenate the bin
 // indices into a single uint.
 
-unsigned int bin_index(float3 particle, int3 gridding) 
+__host__ __device__ unsigned int bin_index(float3 particle, int3 gridding) 
 {
   unsigned int x_index = (unsigned int)(particle.x * (1 << gridding.x));
   unsigned int y_index = (unsigned int)(particle.y * (1 << gridding.y));
@@ -131,6 +132,30 @@ bool cross_check_results(int * h_bins, int * h_bins_checker, int * h_bin_counter
   return error;
 }
 
+#define CHECK(call) { \
+  cudaError_t err = cudaSuccess; \
+  if ( (err = (call)) != cudaSuccess) { \
+    fprintf(stderr, "Got error %s at %s:%d\n", cudaGetErrorString(err), __FILE__, __LINE__); \
+    exit(1); \
+  }\
+}
+
+__global__ void device_binning_kernel(float3 *particles, int *bins, int *bin_counters, int3 gridding, int bin_size, int array_length)
+{
+  int gid = blockIdx.x * blockDim.x  + threadIdx.x;
+  if(gid >= array_length) return;
+
+  {
+    unsigned int bin = bin_index(particles[gid],gridding);
+    if(bin_counters[bin] < bin_size)
+    {
+      // let's not do the whole precrement / postcrement thing...
+      unsigned int offset = atomicAdd(&bin_counters[bin],1);
+      bins[bin*bin_size + offset] = gid;
+    }
+  }
+}
+
 template
 <typename T>
 __global__ void initialize(T *array,T value, unsigned int array_length)
@@ -153,7 +178,36 @@ void device_binning(float3 * h_particles, int * h_bins, int * h_bin_counters, in
 	// int array_length = 0;
 	// initialize<<<griddim,blockdim>>>(array, value, array_length);
 	// The compiler will figure out the types of your arguments and codegen a implementation for each type you use.
+  float3 * d_particles = nullptr;
+  CHECK(cudaMalloc((void**) &d_particles, num_particles * sizeof(float3)));
+  CHECK(cudaMemcpy(d_particles, h_particles, num_particles * sizeof(float3), cudaMemcpyHostToDevice));
 
+  dim3 THRD_SZ(512);
+  dim3 GRID_SZ((num_bins * bin_size + THRD_SZ.x-1)/THRD_SZ.x);
+
+  int * d_bins = nullptr;
+  CHECK(cudaMalloc((void**) &d_bins, num_bins * bin_size * sizeof(int)));
+  //initialize the d_bins to -1
+  initialize<<<GRID_SZ,THRD_SZ>>>(d_bins, -1, num_bins * bin_size);
+
+  int * d_bin_counters = nullptr;
+  CHECK(cudaMalloc((void**) &d_bin_counters, num_bins * sizeof(int)));
+  THRD_SZ = (512);
+  GRID_SZ = ((num_bins + THRD_SZ.x-1)/THRD_SZ.x);
+  //initialize the d_bin_counters to 0
+  initialize<<<GRID_SZ,THRD_SZ>>>(d_bin_counters, 0, num_bins);
+
+  THRD_SZ = (512);
+  GRID_SZ = ((num_particles + THRD_SZ.x-1)/THRD_SZ.x);
+  device_binning_kernel<<<GRID_SZ,THRD_SZ>>>(d_particles, d_bins, d_bin_counters, gridding, bin_size, num_particles);
+
+  CHECK(cudaMemcpy(h_bins, d_bins, num_bins * bin_size * sizeof(int), cudaMemcpyDeviceToHost));
+  CHECK(cudaMemcpy(h_bin_counters, d_bin_counters, num_bins * sizeof(int), cudaMemcpyDeviceToHost));
+
+  //Free allocated memory in the device
+  CHECK(cudaFree(d_particles));
+  CHECK(cudaFree(d_bins));
+  CHECK(cudaFree(d_bin_counters));
 }
 
 int main(void)
@@ -161,6 +215,7 @@ int main(void)
   // create arrays of 8M elements
   int num_particles = 8*1024*1024;
   int log_bpd = 6;
+  //int log_bpd = 0;
   int bins_per_dim = 1 << log_bpd;
   unsigned int num_bins = bins_per_dim*bins_per_dim*bins_per_dim;
   // extra space to account for load imbalance to prevent frequent aborts due to bin overflow 
